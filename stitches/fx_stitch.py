@@ -204,12 +204,13 @@ def get_atts(rp, v, dl, fl, name):
     return out
 
 
-def internal_stitch(rp, dl, fl):
+def internal_stitch(rp, v, dl, fl):
     """
     Stitch a single recipe into netCDF outputs.
 
     :param dl: List of xarray CMIP files.
     :param rp: DataFrame of the recipe.
+    :param v:              name of variable
     :param fl: List of the CMIP file names.
     :return: List of the data arrays for the stitched products of the different variables.
     """
@@ -235,51 +236,49 @@ def internal_stitch(rp, dl, fl):
     end = str(max(rp["target_end_yr"]))
 
 
-        # Again, some ESMs stop in 2099 instead of 2100 - so we just drop the
-        # last year of gridded_data when that is the case.
-        # TODO this will need something extra/different for daily data; maybe just
-        # a simple len(times)==len(gridded_data)-12 : len(times) == len(gridded_data)-(nDaysInYear)
-        # with correct parentheses would do it
-        if (max(rp["target_end_yr"]) == 2099) & (
-            len(times) == (len(gridded_data) - 12)
-        ):
-            gridded_data = gridded_data[0 : len(times), 0:, 0:].copy()
+    if var_info["frequency"][0].lower() == "mon":
+        freq = "M"
+    elif var_info["frequency"][0].lower() == "day":
+        freq = "D"
+    else:
+        raise TypeError(f"unsupported frequency")
+    
+    times = pd.date_range(start=start + "-01-01", end=end + "-12-31", freq=freq)
+    
+    # Again, some ESMs stop in 2099 instead of 2100 - so we just drop the
+    # last year of gridded_data when that is the case.
+    #TODO this will need something extra/different for daily data; maybe just
+    # a simple len(times)==len(gridded_data)-12 : len(times) == len(gridded_data)-(nDaysInYear)
+    # with correct parentheses would do it
+    if ((max(rp["target_end_yr"]) == 2099) & (len(times) == (len(gridded_data) - 12))):
+        gridded_data = gridded_data[0:len(times), 0:, 0:].copy()
 
-        if freq == "D":
-            if (var_info["calendar"][0].lower() == "noleap") & (freq == "D"):
-                times = times[~((times.month == 2) & (times.day == 29))]
 
-        assert len(gridded_data) == len(times), "Problem with the length of time"
+    if (freq == "D"):
+        if ((var_info["calendar"][0].lower() == "noleap") & (freq == "D")):
+            times = times[~((times.month == 2) & (times.day == 29))]
 
-        # Extract the lat and lon information that will be used to structure the
-        # empty netcdf file. Make sure to copy all of the information including
-        # the attributes!
-        lat = dl[0].lat.copy()
-        lon = dl[0].lon.copy()
+    assert (len(gridded_data) == len(times)), f"Problem with the length of time. Expected - {len(times)}. Actual - {len(gridded_data)}."
+    
+    # Extract the lat and lon information that will be used to structure the
+    # empty netcdf file. Make sure to copy all of the information including
+    # the attributes!
+    lat = dl[0].lat.copy()
+    lon = dl[0].lon.copy()
 
-        rslt = xr.Dataset(
-            {
-                v: xr.DataArray(
-                    gridded_data,
-                    coords=[times, lat, lon],
-                    dims=["time", "lat", "lon"],
-                    attrs={
-                        "units": var_info["units"][0],
-                        "variable": var_info["variable"][0],
-                        "experiment": var_info["experiment"][0],
-                        "ensemble": var_info["ensemble"][0],
-                        "model": var_info["model"][0],
-                        "stitching_id": rp["stitching_id"].unique()[0],
-                    },
-                )
-            }
-        )
+    rslt = xr.Dataset({v: xr.DataArray(
+        gridded_data,
+        coords=[times, lat, lon],
+        dims=["time", "lat", 'lon'],
+        attrs={'units': var_info['units'][0],
+                'variable': var_info['variable'][0],
+                'experiment': var_info['experiment'][0],
+                'ensemble': var_info['ensemble'][0],
+                'model': var_info['model'][0],
+                'stitching_id': rp['stitching_id'].unique()[0]})
+    })
 
-        out.append(rslt)
-
-    out_dict = dict(zip(variables, out))
-
-    return out_dict
+    return rslt
 
 
 def gridded_stitching(out_dir: str, rp):
