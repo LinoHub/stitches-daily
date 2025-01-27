@@ -72,6 +72,20 @@ def get_netcdf_values(i, dl, rp, fl, name):
     # Have to have special time handler
     times = extracted.indexes["time"]
 
+    # 27.01 MODIFICATION START
+    # Time frequency
+    freq = xr.infer_freq(times)
+
+    # If daily frequency, check for mis-matched leap-years
+    if ((freq == 'D') | (freq == 'day')):
+        # If using cftime
+        if (type(times) == xr.coding.cftimeindex.CFTimeIndex):
+            target_time_range = xr.cftime_range(start = f'{target_start_yr}-01-01', end = f'{target_end_yr}-12-31', freq='D', calendar=extracted.time.dt.calendar)
+        # Otherwise using pd DatetimeIndex
+        else:
+            target_time_range = pd.date_range(start=f"{target_start_yr}-01-01", end=f"{target_end_yr}-12-31", freq='D')
+    # 27.01 MODIFICATION END
+    
     if type(times) in [
         xr.coding.cftimeindex.CFTimeIndex,
         pd.core.indexes.datetimes.DatetimeIndex,
