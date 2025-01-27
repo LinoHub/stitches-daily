@@ -111,13 +111,22 @@ def get_netcdf_values(i, dl, rp, fl, name):
         expected_times = pd.date_range(
             start=str(start_yr) + "-01-01", end=str(end_yr) + "-12-31", freq="D"
         )
-        if times.calendar == "noleap":
-            expected_len = len(
-                expected_times[
-                    ~((expected_times.month == 2) & (expected_times.day == 29))
-                ]
-            )
+    
+        # MODIFICATION 27.01 3 START
+        # Get number of days
+        expected_len = len(expected_times)
+        # If using noleap calendar
+        if extracted['time'].dt.calendar == 'noleap':
+            # Get number of days over given period with no leap years
+            expected_len = len(xr.cftime_range(start = f'{start_yr}-01-01', end = f'{end_yr}-12-31', freq='D', calendar='noleap'))
+        elif extracted['time'].dt.calendar == '360_day':
+            # Get number of days over given period with 360 day calendar
+            expected_len = len(xr.cftime_range(start = f'{start_yr}-01-01', end = f'{end_yr}-12-31', freq='D', calendar='360_day'))
+    # MODIFICATION 27.01 3 END
+    
+    
     else:
+        # Number of months over given year range
         expected_len = len(
             pd.date_range(
                 start=str(start_yr) + "-01-01", end=str(end_yr) + "-12-31", freq="M"
