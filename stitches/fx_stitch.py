@@ -178,17 +178,18 @@ def get_var_info(rp, dl, fl, name):
 
     attrs = data.get_ds_meta(extracted)
     if attrs.frequency.values != "mon":
-        attrs["calendar"] = extracted.indexes["time"].calendar
+        attrs["calendar"] = extracted["time"].dt.calendar
 
     return attrs
 
 
-def get_atts(rp, dl, fl, name):
+def get_atts(rp, v, dl, fl, name):
     """
     Extract the CMIP variable attribute information.
 
     :param rp: Data frame of the recipes.
     :param dl: List of the data files.
+    :param v:              name of variable
     :param fl: List of the data file names.
     :param name: String of the column containing the variable file name from rp.
     :return: Dict object containing the CMIP variable information.
@@ -212,40 +213,27 @@ def internal_stitch(rp, dl, fl):
     :param fl: List of the CMIP file names.
     :return: List of the data arrays for the stitched products of the different variables.
     """
-    rp = rp.sort_values(by=["stitching_id", "target_start_yr"]).copy()
+    rp = rp.sort_values(by=["target_start_yr"]).copy()
     rp.reset_index(drop=True, inplace=True)
-    variables = find_var_cols(rp)
-    out = []
+    
+    # Get the information about the variable that is going to be stitched together.
+    col = v + '_file'
+    var_info = get_var_info(rp, dl, fl, col)
 
-    # For each of the of the variables stitch the
-    # data together.
-    for v in variables:
-        # Get the information about the variable that is going to be stitched together.
-        col = v + "_file"
-        var_info = get_var_info(rp, dl, fl, col)
+    # For each of time slices extract the data & concatenate together.
+    gridded_data = get_netcdf_values(i=0, dl=dl, rp=rp, fl=fl, name=col)
+        
+    # Now add the other time slices.
+    for i in range(1, len(rp)):
+        new_vals = get_netcdf_values(i=i, dl=dl, rp=rp, fl=fl, name=col)
+        gridded_data = np.concatenate((gridded_data, new_vals), axis=0)
+        
+    # Note that the pd.date_range call need the date/month defined otherwise it will
+    # truncate the year from start of first year to start of end year which is not
+    # what we want. We want the full final year to be included in the times series.
+    start = str(min(rp["target_start_yr"]))
+    end = str(max(rp["target_end_yr"]))
 
-        # For each of time slices extract the data & concatenate together.
-        gridded_data = get_netcdf_values(i=0, dl=dl, rp=rp, fl=fl, name=col)
-
-        # Now add the other time slices.
-        for i in range(1, len(rp)):
-            new_vals = get_netcdf_values(i=i, dl=dl, rp=rp, fl=fl, name=col)
-            gridded_data = np.concatenate((gridded_data, new_vals), axis=0)
-
-        # Note that the pd.date_range call need the date/month defined otherwise it will
-        # truncate the year from start of first year to start of end year which is not
-        # what we want. We want the full final year to be included in the times series.
-        start = str(min(rp["target_start_yr"]))
-        end = str(max(rp["target_end_yr"]))
-
-        if var_info["frequency"][0].lower() == "mon":
-            freq = "M"
-        elif var_info["frequency"][0].lower() == "day":
-            freq = "D"
-        else:
-            raise TypeError("Unsupported frequency.")
-
-        times = pd.date_range(start=start + "-01-01", end=end + "-12-31", freq=freq)
 
         # Again, some ESMs stop in 2099 instead of 2100 - so we just drop the
         # last year of gridded_data when that is the case.
