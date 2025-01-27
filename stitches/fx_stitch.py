@@ -316,6 +316,9 @@ def gridded_stitching(out_dir: str, rp):
         .copy()
     )
 
+    # Model name
+    model_name = rp.archive_model.unique()[0]
+
     # Determine which variables will be downloaded.
     variables = find_var_cols(rp)
     if not (len(variables) >= 1):
@@ -337,72 +340,48 @@ def gridded_stitching(out_dir: str, rp):
     data_list = list(map(pangeo.fetch_nc, file_list))
     print(f"Compiled downloads into {len(data_list)} datasets.")
 
+    # Empty dictionary of filenames to be populated
+    f = {}
+    
     # For each of the stitching recipes go through and stitch a recipe.
     for single_id in rp["stitching_id"].unique():
-        # initialize f to be empty just to be safe now that we've added a
-        # try...except approach. It's technically possible the first id
-        # tried will fail and the function will try to return a non-existent f.
-        f = []
+        
+        # Get the recipe for the given stitching ID
+        single_rp = rp.loc[rp['stitching_id'] == single_id].copy()
 
-        try:
-            _model = rp.archive_model.unique()
-            _var = rp.archive_variable.unique()
-            action_msg = (
-                f"Stitching gridded netcdf for: {_model} {_var} {single_id} ..."
-            )
-            print(action_msg)
+        # Save recipe as csv
+        # Output file name + location
+        recipe_location = f'{out_dir}/stitched_{model_name}_{single_id}_recipe.csv'
+        single_rp.to_csv(recipe_location, index=False)
 
-            # Do the stitching!
-            # ** this can be a slow step and prone to errors
-            single_rp = rp.loc[rp["stitching_id"] == single_id].copy()
+        for variable in variables:
+            print(f'Stitching gridded netcdf for: {model_name}, {variable}, {single_id}')
 
-            rslt = internal_stitch(rp=single_rp, dl=data_list, fl=file_list)
+            try:
+                # Do the stitching!
+                # ** this can be a slow step and prone to errors
+                rslt = internal_stitch(rp=single_rp, v=variable, dl=data_list, fl=file_list)
 
-            # Print the files out at netcdf files
-            f = []
-            for i in rslt.keys():
-                ds = rslt[i]
-                ds = ds.sortby("time").copy()
-                recipe_location = (
-                    out_dir
-                    + "/"
-                    + "stitched_"
-                    + ds[i].attrs["model"]
-                    + "_"
-                    + ds[i].attrs["variable"]
-                    + "_"
-                    + single_id
-                    + "_recipe.csv"
-                )
-                ds[i].attrs["recipe_location"] = recipe_location
-                single_rp.to_csv(recipe_location, index=False)
-                fname = (
-                    out_dir
-                    + "/"
-                    + "stitched_"
-                    + ds[i].attrs["model"]
-                    + "_"
-                    + ds[i].attrs["variable"]
-                    + "_"
-                    + single_id
-                    + ".nc"
-                )
-                ds.to_netcdf(fname)
-                f.append(fname)
-            # end For loop over rslt keys
-        # end try
+                # Order dataset by time (already ordered. Can do to be safe, but takes a long time for no reason)
+                # rslt = rslt.sortby('time').copy()
 
-        except KeyError:
-            print(
-                "Stitching gridded netcdf for: "
-                + rp.archive_model.unique()
-                + " "
-                + rp.archive_variable.unique()
-                + " "
-                + single_id
-                + " failed. Skipping. Error thrown within gridded_stitching fxn."
-            )
-        # end except
+                # Putting file name in attributes
+                rslt[variable].attrs['recipe_location'] = recipe_location
+
+                # NetCDF file name and location
+                netcdf_file_name = f'{out_dir}/stitched_{model_name}_{variable}_{single_id}.nc'
+
+                # Write to NetCDF
+                rslt.to_netcdf(netcdf_file_name)
+
+                # Populate list of file names
+                f[f'{single_id}_{variable}'] = netcdf_file_name
+            #end try
+
+            except:
+                print(('Stitching gridded netcdf for: ' + rp.archive_model.unique() + " " + rp.archive_variable.unique() + " " + single_id +' failed. Skipping. Error thrown within gridded_stitching fxn.'))
+            # end except
+        # end for loop over variables
     # end for loop over single_id
 
     return f
