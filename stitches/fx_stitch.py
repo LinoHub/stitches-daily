@@ -122,7 +122,7 @@ def get_netcdf_values(i, dl, rp, fl, name):
         elif extracted['time'].dt.calendar == '360_day':
             # Get number of days over given period with 360 day calendar
             expected_len = len(xr.cftime_range(start = f'{start_yr}-01-01', end = f'{end_yr}-12-31', freq='D', calendar='360_day'))
-    # MODIFICATION 27.01 3 END
+        # MODIFICATION 27.01 3 END
     
     
     else:
@@ -132,13 +132,34 @@ def get_netcdf_values(i, dl, rp, fl, name):
                 start=str(start_yr) + "-01-01", end=str(end_yr) + "-12-31", freq="M"
             )
         )
+     # MODIFICATION 27.01 4 START
+    # For daily data, target_time_range and expected_len should be made to match
+    if ((freq == 'D') | (freq == 'day')):
+        len_diff = expected_len - len(target_time_range)
+        # If more leap days in archive data, need to remove that number of days (could be at most one?)
+        if(len_diff > 0):
+            # Remove last "len_diff" days
+            result = result[0:(-len_diff),:,:].copy()
+        # If more leap days in target period than archive data, need to add missing days
+        elif(len_diff < 0):
+            # Get shape of data
+            result_shape = result.shape
+            # Extra days shape
+            extra_days_shape = (np.abs(len_diff), result_shape[1], result_shape[2])
+            # Get last "len_diff" days
+            extra_days = result[(len_diff-1):-1,:,:].copy().reshape(extra_days_shape)
+            # Concatenate onto end of data
+            result = np.concatenate((result, extra_days), axis=0)
 
-    assert len(dat) == expected_len, (
-        "Not enough data in " + file + "for period " + str(start_yr) + "-" + str(end_yr)
-    )
+    # The number of days we have in our data
+    actual_len = len(result)
 
-    return dat
+    # Error when number of days in data =/= to the expected number of days over the given period
+    assert (actual_len == len(target_time_range)), f"Time dimensions mismatching in {file} for period {start_yr}-{end_yr}. Expected: {len(target_time_range)}, Actual: {actual_len}."
 
+    # Return data over the given period as a numpy array
+    return result
+    # MODIFICATION 27.01 4 END
 
 def get_var_info(rp, dl, fl, name):
     """
