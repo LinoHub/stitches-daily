@@ -97,9 +97,17 @@ def get_netcdf_values(i, dl, rp, fl, name):
         to_keep = times[flags]
     else:
         raise TypeError("Unsupported time type.")
-    dat = extracted.sel(time=to_keep)[v].values.copy()
 
-    if (times.freq == "D") | (times.freq == "day"):
+    # MODIFICATION 27.01 2 START
+    # Select only the days within the period
+    dat = extracted.sel(time=to_keep)
+    # Output grid as numpy array
+    result = dat[v].values.copy()
+
+    # Get length of time series expected from archive date range
+    if ((freq == 'D') | (freq == 'day')):
+        # Create series of days using standard daily calendar
+    # MODIFICATION 27.01 2 END
         expected_times = pd.date_range(
             start=str(start_yr) + "-01-01", end=str(end_yr) + "-12-31", freq="D"
         )
